@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>美国人口专题地图实验</title>
+  <link rel="stylesheet" href="https://js.arcgis.com/5.0/@arcgis/core/assets/esri/themes/light/main.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: "Microsoft YaHei", sans-serif;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* 1. 页眉区域（实验要求核心区域1） */
+    #header {
+      width: 100%;
+      height: 60px;
+      background: linear-gradient(90deg, #1a365d, #2b6cb0);
+      color: white;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 100;
+      position: relative;
+    }
+
+    #header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    #header .desc {
+      margin-left: 24px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    /* 主容器 */
+    .main-container {
+      width: 100%;
+      height: calc(100% - 60px);
+      display: flex;
+    }
+
+    /* 2. 底图库&图层控制面板（实验要求核心区域2） */
+    #basemap-panel {
+      width: 280px;
+      height: 100%;
+      background: #f8f9fa;
+      border-right: 1px solid #e9ecef;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a365d;
+      margin-bottom: 8px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #2b6cb0;
+    }
+
+    /* 3. 地图核心展示区域（实验要求核心区域3） */
+    #map-view {
+      flex: 1;
+      height: 100%;
+      position: relative;
+    }
+
+    /* 微件样式优化，符合制图规范 */
+    .esri-basemap-gallery {
+      width: 100%;
+      background: transparent;
+      border: none;
+    }
+
+    .esri-basemap-gallery__item {
+      border-radius: 6px;
+      margin-bottom: 8px;
+      border: 1px solid #dee2e6;
+      transition: all 0.2s ease;
+    }
+
+    .esri-basemap-gallery__item:hover {
+      border-color: #2b6cb0;
+      box-shadow: 0 2px 6px rgba(43, 108, 176, 0.2);
+    }
+
+    .esri-basemap-gallery__item--selected {
+      border-color: #2b6cb0;
+      background: #ebf8ff;
+    }
+
+    .esri-layer-list, .esri-legend {
+      width: 100%;
+      background: white;
+      border-radius: 6px;
+      border: 1px solid #dee2e6;
+      padding: 8px;
+    }
+
+    .esri-search {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 360px;
+      z-index: 99;
+    }
+
+    .esri-scale-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      z-index: 99;
+    }
+  </style>
+</head>
+<body>
+<!-- 1. 页眉区域 -->
+<header id="header">
+  <h1>美国专题地图应用</h1>
+  <span class="desc">基于ArcGIS Maps SDK for JavaScript 5.0 开发</span>
+</header>
+
+<div class="main-container">
+  <!-- 2. 底图库&图层控制区域 -->
+  <aside id="basemap-panel">
+    <div>
+      <div class="panel-title">底图切换</div>
+      <div id="basemap-gallery"></div>
+    </div>
+    <div>
+      <div class="panel-title">图层列表</div>
+      <div id="layer-list"></div>
+    </div>
+    <div>
+      <div class="panel-title">人口数据图例</div>
+      <div id="legend"></div>
+    </div>
+  </aside>
+
+  <!-- 3. 地图核心区域 -->
+  <div id="map-view"></div>
+</div>
+
+<!-- 地图核心逻辑 -->
+<script type="module">
+  import Map from "https://js.arcgis.com/5.0/@arcgis/core/Map.js";
+  import MapView from "https://js.arcgis.com/5.0/@arcgis/core/views/MapView.js";
+  import FeatureLayer from "https://js.arcgis.com/5.0/@arcgis/core/layers/FeatureLayer.js";
+  import BasemapGallery from "https://js.arcgis.com/5.0/@arcgis/core/widgets/BasemapGallery.js";
+  import LayerList from "https://js.arcgis.com/5.0/@arcgis/core/widgets/LayerList.js";
+  import Legend from "https://js.arcgis.com/5.0/@arcgis/core/widgets/Legend.js";
+  import ScaleBar from "https://js.arcgis.com/5.0/@arcgis/core/widgets/ScaleBar.js";
+  import Search from "https://js.arcgis.com/5.0/@arcgis/core/widgets/Search.js";
+  import PopupTemplate from "https://js.arcgis.com/5.0/@arcgis/core/PopupTemplate.js";
+
+  // 1. 初始化地图，默认使用适配人口数据的浅灰色底图
+  const map = new Map({
+    basemap: "gray-vector", // 浅灰底图，突出人口专题数据
+  });
+
+  // 2. 初始化地图视图，适配美国本土范围
+  const view = new MapView({
+    container: "map-view",
+    map: map,
+    zoom: 4, // 完整显示美国本土的缩放级别
+    center: [-98.5795, 37.0902], // 美国本土地理中心点经纬度
+    constraints: {
+      minZoom: 3,
+      maxZoom: 12
+    }
+  });
+
+  // 3. 配置美国人口专题图层弹窗，优化数据展示
+  const populationPopup = new PopupTemplate({
+    title: "美国人口统计单元",
+    content: [{
+      type: "fields",
+      fieldInfos: [
+        { fieldName: "*", label: "属性字段", visible: true }
+      ]
+    }]
+  });
+
+  // 4. 加载您发布的美国人口相关GeoScene专题图层
+  const populationFeatureLayer = new FeatureLayer({
+    url: "https://www.geosceneonline.cn/server/rest/services/Hosted/syyincidents0226_2_查看/FeatureServer",
+    title: "美国专题图层",
+    outFields: ["*"],
+    popupTemplate: populationPopup,
+    popupEnabled: true
+  });
+  map.add(populationFeatureLayer);
+
+  // 5. 加载实验要求的全部必选微件
+  // 5.1 底图库切换微件
+  const basemapGallery = new BasemapGallery({
+    view: view,
+    container: "basemap-gallery"
+  });
+
+  // 5.2 图层列表控制微件
+  const layerList = new LayerList({
+    view: view,
+    container: "layer-list",
+    visibilityAppearance: "checkbox",
+    listItemCreatedFunction: (event) => {
+      const item = event.item;
+      if(item.layer.title === "美国专题图层"){
+        item.open = true; // 默认展开人口图层
+      }
+    }
+  });
+
+  // 5.3 人口数据图例微件
+  const legend = new Legend({
+    view: view,
+    container: "legend",
+    layerInfos: [{
+      layer: populationFeatureLayer,
+      title: "人口数据图例"
+    }]
+  });
+
+  // 5.4 比例尺微件（地图左下角）
+  const scaleBar = new ScaleBar({
+    view: view,
+    unit: "metric"
+  });
+  view.ui.add(scaleBar, "bottom-left");
+
+  // 5.5 地址/要素搜索框微件（地图右上角）
+  const searchWidget = new Search({
+    view: view,
+    includeDefaultSources: true,
+    placeholder: "搜索美国城市、地名..."
+  });
+  view.ui.add(searchWidget, "top-right");
+
+  // 加载完成提示与异常处理
+  view.when(() => {
+    console.log("美国专题地图加载完成，图层已成功挂载");
+  }).catch(err => {
+    console.error("地图加载异常：", err);
+    alert("图层加载失败，请检查：1. GeoScene服务是否设置为公开共享；2. 服务地址是否正确；3. 网络是否可正常访问GeoSceneOnline");
+  });
+</script>
+</body>
+</html>
