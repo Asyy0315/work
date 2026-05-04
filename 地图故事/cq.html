@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>重庆空间叙事：尘封的家书</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 引入百度地图 API -->
+    <script type="text/javascript" src="https://api.map.baidu.com/api?v=1.0&type=webgl&ak=xhldCkmJHJM7LEs1fvSpe7z5lILxF8MF"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --paper-color: #f4f1ea;
+            --ink-color: #2c3e50;
+            --war-red: #8b0000;
+            --calm-blue: #3a5f7a;
+        }
+
+        html, body { margin:0; padding:0; height:100%; font-family: 'Noto Serif SC', serif; overflow: hidden; }
+
+        #container { display: flex; height:100vh; position: relative; }
+        /* 百度地图容器 */
+        #map { flex: 1; background: #ddd; transition: filter 1.5s ease; }
+
+        #letter-overlay {
+            position: absolute;
+            left: 30px;
+            top: 30px;
+            width: 280px;
+            background: var(--paper-color);
+            padding: 25px;
+            box-shadow: 5px 5px 20px rgba(0,0,0,0.3);
+            z-index: 1001;
+            border: 1px solid #d4c4a8;
+            transform: rotate(-1deg);
+            background-image: radial-gradient(#d4c4a8 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        #letter-overlay h3 {
+            font-family: 'Ma Shan Zheng', cursive;
+            margin-top: 0;
+            color: #5d4037;
+            border-bottom: 1px solid #d4c4a8;
+        }
+
+        #letter-text {
+            font-size: 0.95rem;
+            color: #5d4037;
+            line-height: 1.8;
+            font-style: italic;
+        }
+
+        #story-panel {
+            width: 400px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+
+        .scene-title { font-size: 24px; font-weight: 700; color: var(--ink-color); margin-bottom: 20px; }
+        .scene-content { flex-grow: 1; line-height: 1.8; color: #444; font-size: 16px; }
+        .data-box { background: #fdf2f2; padding: 15px; border-left: 4px solid var(--war-red); font-size: 0.85rem; margin: 20px 0; }
+        .data-box.blue { border-left-color: var(--calm-blue); background: #f2f6f9; }
+        .nav-btns { display: flex; gap: 10px; margin-top: 20px; }
+
+        button {
+            padding: 12px 20px; border: none; border-radius: 4px;
+            cursor: pointer; font-weight: bold; transition: 0.3s;
+        }
+        .btn-next { background: var(--war-red); color: white; flex: 1; }
+        .btn-prev { background: #eee; color: #666; }
+        button:hover { opacity: 0.8; transform: translateY(-2px); }
+
+        /* 滤镜效果作用于地图容器 */
+        .history-mode { filter: sepia(0.5) contrast(1.1) brightness(0.9); }
+        .war-mode { filter: grayscale(1) contrast(1.2) !important; }
+
+        /* 隐藏百度地图左下角Logo (请注意合规性) */
+        .BMap_cpyCtrl, .anchorBL { display: none !important; }
+
+        /* 新增：图片样式 */
+        .scene-img {
+            width: 100%;
+            border-radius: 8px;
+            margin: 15px 0;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+            transition: transform 0.3s ease;
+        }
+        .scene-img:hover {
+            transform: scale(1.02);
+        }
+
+        @media (max-width: 900px) {
+            #story-panel { width: 100%; height: 40%; position: absolute; bottom: 0; }
+            #letter-overlay { width: 200px; top: 10px; left: 10px; font-size: 12px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="letter-overlay" class="animate__animated animate__fadeInDown">
+        <h3>祖父的信</h3>
+        <div id="letter-text">正在开启木盒...</div>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="story-panel">
+        <div id="scene-ui"></div>
+    </div>
+</div>
+
+<script>
+    // 1. 初始化百度地图 (GL版本)
+    var map = new BMapGL.Map("map");
+    // 设置初始中心点 (重庆)
+    var point = new BMapGL.Point(106.5815, 29.5655);
+    map.centerAndZoom(point, 13);
+    map.enableScrollWheelZoom(true);
+
+    // 设置个性化地图样式 (类似原本的浅色底图)
+    map.setMapStyleV2({
+        styleId: '47932644265448374d2847a968600d41' // 这是一个偏浅色的百度官方模版
+    });
+
+    // 2. 剧情数据 (经纬度已微调至百度坐标系)
+    const scenes = [
+        {
+            title: "开端：尘封的家书",
+            letter: "吾儿亲启：见字如面。自淞沪一别，已逾半载。神州陆沉，国府西迁，渝州已成陪都...",
+            content: `
+                <img src="image/木盒子.png" class="scene-img" alt="旧木盒">
+                当代青年小林在整理祖父遗物时，发现一个旧木盒。这封信不仅是家书，更是一张通往1938年的地图。
+                <img src="image/纸笔.png" class="scene-img" alt="家书">
+            `,
+            data: "背景：1937年11月20日，国民政府发表《移驻重庆宣言》。",
+            center: [106.5595, 29.5695], zoom: 12,
+            mode: "history-mode"
+        },
+        {
+            title: "第一站：朝天门码头 (1938)",
+            letter: "昨日朝天门码头人声鼎沸，皆是流离同胞。江面上帆影绰绰，全是西迁的工厂机器。",
+            content: `
+                <img src="image/朝天门码头旧照.jpeg" class="scene-img" alt="朝天门码头">
+                <b>衣冠西渡：</b>这里是内迁的终点。数以万计的难民、师生和工厂设备从长江逆流而上，重庆人口从47万激增至150万。
+            `,
+            data: "史料：内迁工厂约450家，内迁高校48所。",
+            center: [106.5985, 29.5755], zoom: 16,
+            mode: "history-mode",
+            action: function() {
+                // 模拟西迁线路
+                var p1 = new BMapGL.Point(121.47, 31.23); // 上海
+                var p2 = new BMapGL.Point(106.59, 29.57); // 重庆
+                var polyline = new BMapGL.Polyline([p1, p2], {strokeColor:"red", strokeWeight:3, strokeOpacity:0.5, strokeStyle: 'dashed'});
+                map.addOverlay(polyline);
+            }
+        },
+        {
+            title: "第二站：沙坪坝文化区 (1939)",
+            letter: "我已在沙坪坝找到容身之所，与诸多学子为邻。沙坪山上，弦歌不辍，暂得安宁。",
+            content: `
+                <img src="image/大学旧址.png" class="scene-img" alt="沙坪坝建筑">
+                <img src="image/文化发展.png" class="scene-img" alt="文化活动">
+                <b>文军长征：</b>中央大学、南开中学等在此扎堆。即使物资匮乏，师生们在防空洞里依然坚持授课。
+            `,
+            data: "名句：‘沙坪山上，弦歌不辍’。郭沫若《屈原》等名剧在此首演。",
+            center: [106.4745, 29.5715], zoom: 15,
+            mode: "history-mode"
+        },
+        // ========== 新增：第三站 曾家岩与红岩村 ==========
+        {
+            title: "第三站：曾家岩与红岩村 (1940年)",
+            letter: "此间乃是雾都明灯，周公馆与红岩村隔江相望，国共携手，风雨同舟。",
+            content: `
+                <img src="image/曾家岩.png" class="scene-img" alt="曾家岩周公馆">
+                <b>统一战线的政治舞台</b><br>
+                这里聚集了国民政府军事委员会、周公馆（中共南方局）与红岩村八路军办事处，是战时中国政治力量交锋与对话的焦点。<br><br>
+                <b>团结抗战的缩影</b><br>
+                周恩来等中共代表长驻于此，维系国共合作，各民主党派与进步人士往来频繁，共同呼吁“坚持抗战，反对投降”。
+            `,
+            data: "历史定格：1940年9月6日，国民政府正式定重庆为“永久陪都”。",
+            dataClass: "blue",
+            center: [106.5455, 29.5615], zoom: 15,
+            mode: "history-mode",
+            action: function() {
+                // 标记周公馆与红岩村
+                const zhougongguan = new BMapGL.Point(106.545, 29.561);
+                const hongyancun = new BMapGL.Point(106.468, 29.585);
+                const marker1 = new BMapGL.Marker(zhougongguan);
+                const marker2 = new BMapGL.Marker(hongyancun);
+                map.addOverlay(marker1);
+                map.addOverlay(marker2);
+            }
+        },
+        // ========== 原第四站 较场口大隧道 升级 ==========
+        {
+            title: "第四站：较场口大隧道 (1941年6月5日)",
+            letter: "昨夜，地狱之门洞开，数千生灵在黑暗与绝望中化为冤魂……防空洞里，只闻哭嚎，不见天日。",
+            content: `
+                <img src="image/轰炸机.png" class="scene-img" alt="轰炸">
+                <img src="image/轰炸遗迹.png" class="scene-img" alt="轰炸场景">
+                <img src="image/大轰炸遗址.png" class="scene-img" alt="惨案遗址">
+                <img src="image/报纸.png" class="scene-img" alt="报纸">
+                <b>“大隧道窒息惨案”</b><br>
+                警报骤响，数万市民涌入十八梯大隧道躲避轰炸。因隧道设计容量不足、管理混乱，酿成震惊中外的窒息惨案。<br><br>
+                <b>暴行的铁证</b><br>
+                早在1939年5月3-4日，日军就发动了首次大规模无差别轰炸（“五三、五四”大轰炸），市区化为焦土，平民死伤超8000人。
+            `,
+            data: "据史料记载，“六五惨案”死亡人数保守为992人，是重庆大轰炸中最惨痛的一天。",
+            center: [106.5805, 29.5595], zoom: 17,
+            mode: "war-mode"
+        },
+        {
+            title: "第五站：精神堡垒 (1943)",
+            letter: "不怕你龟儿子轰，不怕你龟儿子炸！老子们有防空洞！整座城都在废墟中挺立。",
+            content: "<b>不屈之城：</b>在市中心，人们筑起‘精神堡垒’。罗斯福总统感叹重庆市民‘英勇之男女，足以永垂不朽’。",
+            data: "性格：‘愈炸愈强’从此成为重庆的城市精神。",
+            center: [106.5835, 29.5635], zoom: 18,
+            mode: "history-mode"
+        },
+        {
+            title: "结尾：回响与和平",
+            letter: "山河无恙，人间皆安。愿后世子孙，永享太平。 ——父字，民国三十五年夏。",
+            content: `
+                <img src="image/现代重庆.png" class="scene-img" alt="现代重庆">
+                <b>历史重叠：</b>小林站在如今的解放碑下。曾经的硝烟已散去，祖父期盼的‘太平’，正是此刻的繁华。
+            `,
+            data: "现状：原址已建成‘重庆抗战遗址博物馆’等纪念地。",
+            center: [106.5835, 29.5635], zoom: 15,
+            mode: ""
+        }
+    ];
+
+    let currentIdx = 0;
+
+    function showScene(idx) {
+        const scene = scenes[idx];
+        const ui = document.getElementById('scene-ui');
+        const letter = document.getElementById('letter-text');
+        const mapDiv = document.getElementById('map');
+
+        // 百度地图平滑移动 (经纬度, 缩放级别)
+        var targetPoint = new BMapGL.Point(scene.center[0], scene.center[1]);
+        map.flyTo(targetPoint, scene.zoom);
+
+        // 切换滤镜
+        mapDiv.className = scene.mode;
+
+        // 更新家书
+        letter.className = "animate__animated animate__fadeIn";
+        letter.innerText = scene.letter;
+
+        // 更新内容面板
+        ui.innerHTML = `
+            <div class="animate__animated animate__fadeInRight">
+                <div class="scene-title">${scene.title}</div>
+                <div class="scene-content">${scene.content}</div>
+                <div class="data-box ${scene.dataClass || ''}">${scene.data}</div>
+                <div class="nav-btns">
+                    ${idx > 0 ? `<button class="btn-prev" onclick="showScene(${idx-1})">回溯</button>` : ''}
+                    <button class="btn-next" onclick="${idx === scenes.length-1 ? 'location.reload()' : `showScene(${idx+1})`}">
+                        ${idx === scenes.length-1 ? '重新开启木盒' : '跟随线索'}
+                    </button>
+                </div>
+            </div>
+        `;
+
+        if(scene.action) scene.action();
+    }
+
+    window.onload = () => {
+        // 稍微延迟启动，等待地图加载
+        setTimeout(() => showScene(0), 500);
+    };
+</script>
+</body>
+</html>
